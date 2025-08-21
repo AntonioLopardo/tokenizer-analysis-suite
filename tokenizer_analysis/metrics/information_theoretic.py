@@ -345,6 +345,7 @@ class InformationTheoreticMetrics(BaseMetrics):
         results['compression_ratio'] = self.compute_compression_ratio(tokenized_data)
         results['renyi_efficiency'] = self.compute_renyi_efficiency_analysis(tokenized_data)
         results['unigram_distribution_metrics'] = self.compute_unigram_distribution_metrics(tokenized_data)
+        results['ngram_entropy_metrics'] = self.compute_ngram_entropy_metrics(tokenized_data)
 
         return results
     
@@ -360,3 +361,61 @@ class InformationTheoreticMetrics(BaseMetrics):
         # This functionality should be handled by the analyzer's grouped analysis
         # For now, just return regular compute results
         return self.compute(tokenized_data)
+
+    def _ngram_counts(self, sequences: List[List[str]], n: int) -> Counter:
+        counts = Counter()
+        for seq in sequences:
+            if len(seq) >= n:
+                for i in range(len(seq) - n + 1):
+                    counts[tuple(seq[i:i+n])] += 1
+        return counts
+
+    def compute_ngram_entropy_metrics(self, tokenized_data: Dict[str, List[TokenizedData]], n: int = 2, alpha: float = 1.0) -> Dict[str, Any]:
+        results = {'per_tokenizer': {}, 'per_language': {}, 'pairwise_comparisons': {}}
+
+        for tok_name in self.tokenizer_names:
+            if tok_name not in tokenized_data:
+                continue
+
+            tok_data = tokenized_data[tok_name]
+            lang_groups = TokenizedDataProcessor.group_by_language(tok_data)
+
+            per_lang_ent = {}
+            global_sequences = []
+
+            for lang, lang_data in lang_groups.items():
+                sequences = [d.tokens for d in lang_data if d.tokens]
+                if not sequences:
+                    continue
+                global_sequences.extend(sequences)
+
+                ngram_counts = self._ngram_counts(sequences, n=n)
+                per_lang_ent[lang] = self.compute_renyi_entropy(ngram_counts, alpha=alpha)
+
+            global_ngram_counts = self._ngram_counts(global_sequences, n=n) if global_sequences else Counter()
+            results['per_tokenizer'][tok_name] = {
+                f'global_{n}gram_entropy': self.compute_renyi_entropy(global_ngram_counts, alpha=alpha),
+                'per_language': per_lang_ent
+            }
+
+        # Optional: aggregate per-language for cross-tokenizer comparison
+        all_languages = set()
+        for v in results['per_tokenizer'].values():
+            all_languages.update(v['per_language'].keys())
+        for lang in all_languages:
+            results['per_language'][lang] = {
+                tok: v['per_language'][lang]
+                for tok, v in results['per_tokenizer'].items()
+                if lang in v['per_language']
+            }
+
+        # Optional: pairwise comparisons (global)
+        globals_for_comp = {
+            name: v[f'global_{n}gram_entropy']
+            for name, v in results['per_tokenizer'].items()
+        }
+        results['pairwise_comparisons'][f'global_{n}gram_entropy'] = self.compute_pairwise_comparisons(
+            globals_for_comp, metric_name=f'global_{n}gram_entropy'
+        )
+
+        return results
