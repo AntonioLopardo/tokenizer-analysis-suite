@@ -3,6 +3,13 @@
 from collections import Counter, defaultdict
 import math
 from typing import Dict, Tuple, List, Optional
+# Compute U-statistics summaries for all tokenizers in config
+from utils import compute_results_for_tokenizers_config
+from tokenizers import Tokenizer
+from pathlib import Path
+import pandas as pd
+import json, math, statistics, time
+from typing import Any, Dict
 
 def compute_char_and_bigram_counts(
     dataset,
@@ -304,15 +311,6 @@ def token_pmi_plus_entropy_stat_map(
 
     print("[ustat] Finished combining U per token")
     return token_to_u, global_min
-
-
-# Compute U-statistics summaries for all tokenizers in config
-from utils import compute_results_for_tokenizers_config, load_eng_dataset
-from tokenizers import Tokenizer
-from pathlib import Path
-import pandas as pd
-import json, math, statistics, time
-from typing import Any, Dict
 
 def _u_stats_from_per_token(per_token_u: Dict[str, float]) -> Dict[str, Any]:
     vals = list(per_token_u.values())

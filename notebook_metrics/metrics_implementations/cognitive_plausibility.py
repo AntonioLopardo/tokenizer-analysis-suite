@@ -1,7 +1,7 @@
 from tokenizers import Tokenizer
 import pandas as pd
 
-KEULEERS_PATH = "/Users/antoniolopardo/Documents/SOAR-alt/data/lexicon/keuleers2012_lexicaldecision.csv"
+KEULEERS_PATH = "data/lexicon/keuleers2012_lexicaldecision.csv"
 
 keu_long = pd.read_csv(KEULEERS_PATH)
 keu_wide = keu_long.copy()

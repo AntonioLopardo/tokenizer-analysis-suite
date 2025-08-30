@@ -8,19 +8,19 @@ from typing import Callable, Optional, Any, Dict, List, Union
 import pandas as pd
 from tqdm.auto import tqdm
 
-eng_path = "/Users/antoniolopardo/Documents/SOAR-alt/data/eng_Latn/eng_latn_300mb.txt"
-sample_tokenizer_path = "/Users/antoniolopardo/Documents/SOAR-alt/data/eng_montok/bpe_eng_latn_6144_300mb_unscaled.json"
+#eng_path = "/Users/antoniolopardo/Documents/SOAR-alt/data/eng_Latn/eng_latn_300mb.txt"
+#sample_tokenizer_path = "/Users/antoniolopardo/Documents/SOAR-alt/data/eng_montok/bpe_eng_latn_6144_300mb_unscaled.json"
 
 # Load the local text file; each line becomes one example
-eng_ds = load_dataset("text", data_files={"train": eng_path}, split="train")
+#eng_ds = load_dataset("text", data_files={"train": eng_path}, split="train")
     
     
-def load_eng_dataset():
-    """Load the English dataset."""
-    return eng_ds
+# def load_eng_dataset():
+#     """Load the English dataset."""
+#     return eng_ds
 
-def load_sample_tokenizer():
-    return Tokenizer.from_file(sample_tokenizer_path)
+# def load_sample_tokenizer():
+#     return Tokenizer.from_file(sample_tokenizer_path)
 
 def load_tokenized_data(tokenizer, dataset, batch_size=4096):
     """Return a list of encodings for each line in the dataset."""
@@ -73,14 +73,53 @@ def _load_tokenizer_from_config_entry(entry: Dict[str, Any]) -> Tokenizer:
     """Load a tokenizer from a config entry.
 
     Expected schema per entry:
-        { "class": "huggingface-tokenizer", "path": "/abs/path/to/tokenizer.json" }
+        1) Local tokenizer.json (Rust tokenizers):
+           { "class": "huggingface-tokenizer", "path": "/abs/path/to/tokenizer.json" }
+
+        2) Hugging Face model or tokenizer repository (requires a fast tokenizer):
+           { "class": "huggingface", "path": "org/model_id", "revision": "main", "use_fast": true, "trust_remote_code": false }
     """
-    if entry.get("class") != "huggingface-tokenizer":
-        raise ValueError(f"Unsupported tokenizer class: {entry.get('class')}")
-    path = entry.get("path")
-    if not path:
-        raise ValueError("Tokenizer config entry is missing required 'path' field")
-    return Tokenizer.from_file(path)
+    cls = entry.get("class")
+    if cls == "huggingface-tokenizer":
+        path = entry.get("path")
+        if not path:
+            raise ValueError("Tokenizer config entry is missing required 'path' field")
+        return Tokenizer.from_file(path)
+
+    if cls in {"huggingface", "huggingface-model"}:
+        model_id = entry.get("path")
+        if not model_id:
+            raise ValueError("Hugging Face config entry is missing required 'path' field (model or repo id)")
+
+        # Optional extras
+        revision = entry.get("revision", None)
+        use_fast = entry.get("use_fast", True)
+        trust_remote_code = entry.get("trust_remote_code", False)
+
+        try:
+            from transformers import AutoTokenizer  # Lazy import
+        except Exception as e:
+            raise RuntimeError("transformers is required to load a Hugging Face tokenizer from a model id") from e
+
+        try:
+            hf_tok = AutoTokenizer.from_pretrained(
+                model_id,
+                revision=revision,
+                use_fast=use_fast,
+                trust_remote_code=trust_remote_code,
+            )
+        except Exception as e:
+            raise RuntimeError(f"Failed to load Hugging Face tokenizer '{model_id}': {e}") from e
+
+        backend = getattr(hf_tok, "backend_tokenizer", None)
+        if backend is None:
+            raise ValueError(
+                "Loaded tokenizer is not a fast tokenizer with a Rust backend. "
+                "Ensure the model provides a fast tokenizer (use_fast=true)"
+            )
+        return backend
+
+    raise ValueError(f"Unsupported tokenizer class: {entry.get('class')}")
 
 
 def _extract_vocab_size_from_name(name: str, pattern: str = r"_(\d+)_300mb") -> Optional[int]:
