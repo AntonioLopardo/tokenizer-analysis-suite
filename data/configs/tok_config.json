@@ -1,0 +1,4 @@
+{
+  
+  "mono_gold_130m_pre_lr1e-4_tha_thai_bpe_unscaled_65536": { "class": "huggingface-tokenizer", "path": "/Users/antoniolopardo/Documents/SOAR-sample/tokenizer-analysis-suite/data/tokenizers/mono_gold_130m_pre_lr1e-4_tha_thai_bpe_unscaled_65536/tokenizer.json" }
+}
