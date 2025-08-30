@@ -35,6 +35,7 @@ ENV/
 
 # Jupyter Notebook
 .ipynb_checkpoints/
+*.ipynb
 
 # Data files
 *.pkl
@@ -42,7 +43,6 @@ ENV/
 *.h5
 *.hdf5
 *.parquet
-data/
 datasets/
 
 # Results and outputs

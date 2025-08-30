@@ -1,0 +1,10 @@
+{
+    "languages": {
+
+            "eng_Latn": {
+                "name": "English",
+                "iso_code": "en", 
+                "data_path": "data/eng_Latn/eng_latn_300mb.txt"
+            }
+    }
+}
