@@ -133,6 +133,15 @@ class HuggingFaceTokenizer(TokenizerWrapper):
         self._name = name
         self._tokenizer = tokenizer
         self._config = config
+        # Enforce global encoding controls
+        self._max_length: Optional[int] = 1024
+        self._truncation: bool = True
+        # If max_length is provided, reflect it on the tokenizer to avoid warnings
+        try:
+            if self._max_length is not None and hasattr(self._tokenizer, 'model_max_length'):
+                self._tokenizer.model_max_length = self._max_length
+        except Exception:
+            pass
     
     def get_name(self) -> str:
         return self._name
@@ -147,7 +156,16 @@ class HuggingFaceTokenizer(TokenizerWrapper):
         return True
     
     def encode(self, text: str) -> List[int]:
-        result = self._tokenizer.encode(text)
+        # Apply truncation/max_length if configured
+        try:
+            result = self._tokenizer.encode(
+                text,
+                truncation=self._truncation,
+                max_length=self._max_length
+            )
+        except TypeError:
+            # Older tokenizers may not accept kwargs; fall back
+            result = self._tokenizer.encode(text)
         # Handle different return types
         if hasattr(result, 'ids'):
             return result.ids

@@ -1,4 +1,18 @@
 {
-  
-  "mono_gold_130m_pre_lr1e-4_tha_thai_bpe_unscaled_65536": { "class": "huggingface-tokenizer", "path": "/Users/antoniolopardo/Documents/SOAR-sample/tokenizer-analysis-suite/data/tokenizers/mono_gold_130m_pre_lr1e-4_tha_thai_bpe_unscaled_65536/tokenizer.json" }
+  "mono_gold_130m_pre_lr1e-4_eng_latn_bpe_unscaled_8192": { "class": "huggingface", "path": "shikhar-srivastava/mono_gold_130m_pre_lr1e-4_eng_latn_bpe_unscaled_8192" },
+  "mono_gold_130m_pre_lr1e-4_eng_latn_bpe_unscaled_16384": { "class": "huggingface", "path": "shikhar-srivastava/mono_gold_130m_pre_lr1e-4_eng_latn_bpe_unscaled_16384" },
+  "mono_gold_130m_pre_lr1e-4_eng_latn_bpe_unscaled_32768": { "class": "huggingface", "path": "shikhar-srivastava/mono_gold_130m_pre_lr1e-4_eng_latn_bpe_unscaled_32768" },
+  "mono_gold_130m_pre_lr1e-4_eng_latn_bpe_unscaled_49152": { "class": "huggingface", "path": "shikhar-srivastava/mono_gold_130m_pre_lr1e-4_eng_latn_bpe_unscaled_49152" },
+  "mono_gold_130m_pre_lr1e-4_eng_latn_bpe_unscaled_65536": { "class": "huggingface", "path": "shikhar-srivastava/mono_gold_130m_pre_lr1e-4_eng_latn_bpe_unscaled_65536" },
+  "mono_gold_130m_pre_lr1e-4_eng_latn_bpe_unscaled_81920": { "class": "huggingface", "path": "shikhar-srivastava/mono_gold_130m_pre_lr1e-4_eng_latn_bpe_unscaled_81920" },
+  "mono_gold_130m_pre_lr1e-4_eng_latn_bpe_unscaled_98304": { "class": "huggingface", "path": "shikhar-srivastava/mono_gold_130m_pre_lr1e-4_eng_latn_bpe_unscaled_98304" },
+  "mono_gold_130m_pre_lr1e-4_eng_latn_bpe_unscaled_114688": { "class": "huggingface", "path": "shikhar-srivastava/mono_gold_130m_pre_lr1e-4_eng_latn_bpe_unscaled_114688" },
+  "mono_gold_130m_pre_lr1e-4_eng_latn_unigram_unscaled_8192": { "class": "huggingface", "path": "shikhar-srivastava/mono_gold_130m_pre_lr1e-4_eng_latn_unigram_unscaled_8192" },
+  "mono_gold_130m_pre_lr1e-4_eng_latn_unigram_unscaled_16384": { "class": "huggingface", "path": "shikhar-srivastava/mono_gold_130m_pre_lr1e-4_eng_latn_unigram_unscaled_16384" },
+  "mono_gold_130m_pre_lr1e-4_eng_latn_unigram_unscaled_32768": { "class": "huggingface", "path": "shikhar-srivastava/mono_gold_130m_pre_lr1e-4_eng_latn_unigram_unscaled_32768" },
+  "mono_gold_130m_pre_lr1e-4_eng_latn_unigram_unscaled_49152": { "class": "huggingface", "path": "shikhar-srivastava/mono_gold_130m_pre_lr1e-4_eng_latn_unigram_unscaled_49152" },
+  "mono_gold_130m_pre_lr1e-4_eng_latn_unigram_unscaled_65536": { "class": "huggingface", "path": "shikhar-srivastava/mono_gold_130m_pre_lr1e-4_eng_latn_unigram_unscaled_65536" },
+  "mono_gold_130m_pre_lr1e-4_eng_latn_unigram_unscaled_81920": { "class": "huggingface", "path": "shikhar-srivastava/mono_gold_130m_pre_lr1e-4_eng_latn_unigram_unscaled_81920" },
+  "mono_gold_130m_pre_lr1e-4_eng_latn_unigram_unscaled_98304": { "class": "huggingface", "path": "shikhar-srivastava/mono_gold_130m_pre_lr1e-4_eng_latn_unigram_unscaled_98304" },
+  "mono_gold_130m_pre_lr1e-4_eng_latn_unigram_unscaled_114688": { "class": "huggingface", "path": "shikhar-srivastava/mono_gold_130m_pre_lr1e-4_eng_latn_unigram_unscaled_114688" }
 }

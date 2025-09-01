@@ -25,12 +25,12 @@ echo "TOK_SUITE_OUT=${TOK_SUITE_OUT}"
 
 mkdir -p "${RESULTS_DIR}" "${TOK_SUITE_OUT}"
 
-echo "[1/4] Running notebook_metrics/metrics.py"
-python notebook_metrics/metrics.py \
-  --config "${TOK_CONFIG}" \
-  --dataset "${ENG_DATA}" \
-  --outdir "${RESULTS_DIR}" \
-  --subset-n 1000
+# echo "[1/4] Running notebook_metrics/metrics.py"
+# python notebook_metrics/metrics.py \
+#   --config "${TOK_CONFIG}" \
+#   --dataset "${ENG_DATA}" \
+#   --outdir "${RESULTS_DIR}" \
+#   --subset-n 1000
 
 echo "[2/4] Running scripts/run_tokenizer_analysis.py"
 python scripts/run_tokenizer_analysis.py \
@@ -38,7 +38,7 @@ python scripts/run_tokenizer_analysis.py \
   --language-config "${LANG_CONFIG}" \
   --output-dir "${TOK_SUITE_OUT}" \
   --verbose \
-  --samples-per-lang 1000 \
+  --samples-per-lang 25000 \
   --morphscore \
   --morphscore-data "${MORPHSCORE_DATA}"
 

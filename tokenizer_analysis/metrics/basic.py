@@ -10,6 +10,7 @@ import logging
 from .base import BaseMetrics, TokenizedDataProcessor
 from ..core.input_types import TokenizedData
 from ..core.input_providers import InputProvider
+from ..core.tokenizer_wrapper import TokenizerWrapper
 from ..config import TextMeasurementConfig, TextMeasurer, DEFAULT_TEXT_MEASUREMENT_CONFIG
 from ..config.language_metadata import LanguageMetadata
 from ..constants import (
@@ -57,11 +58,18 @@ class BasicTokenizationMetrics(BaseMetrics):
         # Compute fertility analysis
         results.update(self.compute_fertility_analysis(tokenized_data))
         
+        # Compute encoding length analysis
+        results.update(self.compute_encoding_length_analysis(tokenized_data))
+        
         # Compute token length analysis
         results.update(self.compute_token_length_analysis(tokenized_data))
         
         # Compute vocabulary utilization
         results.update(self.compute_vocabulary_utilization_analysis(tokenized_data))
+        
+        # Compute vocabulary tokens analysis
+        results.update(self.compute_vocabulary_tokens_analysis(tokenized_data))
+        print(results['vocabulary_tokens']['per_tokenizer'])
         
         # Compute type-token ratio
         results.update(self.compute_type_token_ratio_analysis(tokenized_data))
@@ -205,6 +213,138 @@ class BasicTokenizationMetrics(BaseMetrics):
                 }
         
         return results
+    
+    def compute_encoding_length_analysis(self, tokenized_data: Dict[str, List[TokenizedData]]) -> Dict[str, Any]:
+        """
+        Compute encoding length analysis.
+        
+        Args:
+            tokenized_data: Dict mapping tokenizer names to TokenizedData lists
+            
+        Returns:
+            Dict with encoding length results
+        """
+        results = {
+            'encoding_length': {
+                'per_tokenizer': {},
+                'metadata': {
+                    'primary_unit': 'tokens',
+                    'description': 'Total encoding length per tokenizer'
+                }
+            }
+        }
+        
+        for tok_name in self.tokenizer_names:
+            if tok_name not in tokenized_data:
+                continue
+            
+            tok_data = tokenized_data[tok_name]
+            
+            encoding_lengths = []
+            for data in tok_data:
+                if data.tokens:
+                    encoding_lengths.append(len(data.tokens))
+                    
+            if encoding_lengths:
+                encoding_stats = self.compute_basic_stats(encoding_lengths)
+                results['encoding_length']['per_tokenizer'][tok_name] = {
+                    'encoding_length': encoding_stats,
+                }
+                    
+            else:
+                empty_stats = self.empty_stats()
+                results['encoding_length']['per_tokenizer'][tok_name] = {
+                    'encoding_length': empty_stats,
+                }
+        
+        return results
+    
+    def compute_vocabulary_tokens_analysis(self, tokenized_data: Dict[str, List[TokenizedData]]) -> Dict[str, Any]:
+        """
+        Compute the number of final tokens, intermediary tokens, special tokens, tokens with leading space in the vocabulary.
+        
+        Args:
+            tokenized_data: Dict mapping tokenizer names to TokenizedData lists
+            
+        Returns:
+            Dict with vocabulary tokens results
+        """
+        results = {
+            'vocabulary_tokens': {
+                'per_tokenizer': {},
+                'metadata': {
+                    'description': 'Number of final tokens, intermediary tokens, special tokens, tokens with leading space in the vocabulary',
+                    'metric_range': '[0, vocab_size]'
+                }
+            }
+        }
+        
+        for tok_name in self.tokenizer_names:
+            if tok_name not in tokenized_data:
+                continue
+            
+            tokenizer = self.input_provider.get_tokenizer(tok_name)
+            stats = self._compute_vocabulary_tokens_stats(tokenizer)
+            results['vocabulary_tokens']['per_tokenizer'][tok_name] = {
+                'vocabulary_tokens': stats
+            }
+        
+        return results
+    
+    def _compute_vocabulary_tokens_stats(self, tokenizer: TokenizerWrapper) -> Dict[str, Any]:
+        """Compute vocabulary tokens stats for a list of TokenizedData."""
+        vocab_size = tokenizer.get_vocab_size()
+        
+        leading_space_tokens = self._count_tokens_with_leading_space(tokenizer)
+        final_tokens, used_in_merges, special_tokens = self._analyze_tokenizer_merges(tokenizer)
+        
+        
+        return {
+            'leading_space_tokens_count': len(leading_space_tokens),
+            'leading_space_tokens_share': len(leading_space_tokens) / vocab_size,
+            'final_tokens_count': final_tokens,
+            'used_in_merges': used_in_merges,
+            'special_tokens_count': special_tokens
+        }
+        
+    def _analyze_tokenizer_merges(self, tokenizer: TokenizerWrapper) -> Dict[str, Any]:
+        """Analyze tokenizer merges."""
+        tokens = tokenizer.get_underlying_tokenizer().get_vocab().keys()
+        special_tokens_count = 0#len(tokenizer.get_underlying_tokenizer().get_vocab(with_added_tokens=True).keys()) - len(tokens)
+
+        # Collect all proper prefixes and proper suffixes across tokens
+        prefixes: set[str] = set()
+        suffixes: set[str] = set()
+        for token in tokens:
+            L = len(token)
+            for k in range(1, L):
+                prefixes.add(token[:k])
+                suffixes.add(token[k:])
+
+        # A token is non-final if it is a proper prefix or suffix of any other token
+        non_final = {t for t in tokens if t in prefixes or t in suffixes}
+        final_count = len(tokens) - len(non_final)
+
+        return final_count, len(non_final), special_tokens_count
+        
+    def _count_tokens_with_leading_space(self, tokenizer: TokenizerWrapper) -> Dict[str, Any]:
+        vocab = tokenizer.get_vocab()
+
+        tokens = list(vocab.keys())
+
+        markers = set()
+        if any(t.startswith("Ġ") for t in tokens):
+            markers.add("Ġ")
+        if any(t.startswith("▁") for t in tokens):
+            markers.add("▁")
+        markers.add(" ")
+
+        def has_leading_space_marker(tok: str) -> bool:
+            return any(tok.startswith(m) for m in markers)
+
+        leading_space_tokens = [t for t in tokens if has_leading_space_marker(t)]
+
+        return leading_space_tokens
     
     def compute_vocabulary_utilization_analysis(self, tokenized_data: Dict[str, List[TokenizedData]]) -> Dict[str, Any]:
         """

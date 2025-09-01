@@ -15,6 +15,8 @@ from .metrics.basic import BasicTokenizationMetrics
 from .metrics.information_theoretic import InformationTheoreticMetrics
 from .metrics.morphological import MorphologicalMetrics
 from .metrics.gini import TokenizerGiniMetrics
+from .metrics.cognitive_plausibility import CognitivePlausibilityMetrics
+from .metrics.ustat import UStatMetrics
 from .loaders import MorphologicalDataLoader
 from .visualization import TokenizerVisualizer
 from .main import UnifiedTokenizerAnalyzer, create_analyzer_from_raw_inputs, create_analyzer_from_tokenized_data
@@ -25,6 +27,8 @@ __all__ = [
     "InformationTheoreticMetrics", 
     "MorphologicalMetrics",
     "TokenizerGiniMetrics",
+    "CognitivePlausibilityMetrics",
+    "UStatMetrics",
     "MorphologicalDataLoader",
     "TokenizerVisualizer",
     "UnifiedTokenizerAnalyzer",

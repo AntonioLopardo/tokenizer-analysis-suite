@@ -22,15 +22,15 @@ COLUMNS_TO_KEEP: List[str] = [
     "corr_chunkability_rt_z",
     "corr_chunkability_accuracy",
     "encoding_length",
-    "chars_total",
+    #"chars_total",
     "avg_chars_per_token",
     "n_tokens",
     "u_mean",
     "u_median",
     "final_tokens_count",
     "used_in_merges",
-    "no_leading_space_tokens_count",
-    "no_leading_space_tokens_share",
+    "leading_space_tokens_count",
+    "leading_space_tokens_share",
     "AUC_zipf",
     "SLOPE_zipf",
     "POWER_LAW_MAE_zipf",
@@ -174,6 +174,12 @@ def extract_metrics_from_analysis_json(json_path: Path) -> pd.DataFrame:
         "compression_ratio",
         "unigram_distribution_metrics",
         "morphscore",
+        "cognitive_plausibility",
+        "encoding_length",
+        "token_length",
+        "zipf",
+        "vocabulary_tokens",
+        "ustat",
     ]
     tokenizer_names = set()
     for section in sections:
@@ -223,6 +229,53 @@ def extract_metrics_from_analysis_json(json_path: Path) -> pd.DataFrame:
         row["compression_ratio_global_mean"] = get_nested(
             data, ["compression_ratio", "per_tokenizer", tok, "global", "mean"], default=pd.NA
         )
+
+        # Cognitive plausibility correlations
+        row["corr_chunkability_rt_mean"] = get_nested(
+            data, ["cognitive_plausibility", "per_tokenizer", tok, "corr_chunkability_rt_mean"], default=pd.NA
+        )
+        row["corr_chunkability_rt_z"] = get_nested(
+            data, ["cognitive_plausibility", "per_tokenizer", tok, "corr_chunkability_rt_z"], default=pd.NA
+        )
+        row["corr_chunkability_accuracy"] = get_nested(
+            data, ["cognitive_plausibility", "per_tokenizer", tok, "corr_chunkability_accuracy"], default=pd.NA
+        )
+
+        # Encoding length (mean)
+        row["encoding_length"] = get_nested(
+            data, ["encoding_length", "per_tokenizer", tok, "encoding_length", "mean"], default=pd.NA
+        )
+
+        # Token length -> avg chars per token (mean)
+        row["avg_chars_per_token"] = get_nested(
+            data, ["token_length", "per_tokenizer", tok, "character_length", "mean"], default=pd.NA
+        )
+
+        # N-gram entropy metrics (global bigram entropy)
+        row["bigrams_entropy"] = get_nested(
+            data, ["ngram_entropy_metrics", "per_tokenizer", tok, "global_2gram_entropy"], default=pd.NA
+        )
+
+        # Zipf metrics (global)
+        row["AUC_zipf"] = get_nested(data, ["zipf", "per_tokenizer", tok, "global", "AUC"], default=pd.NA)
+        row["SLOPE_zipf"] = get_nested(data, ["zipf", "per_tokenizer", tok, "global", "SLOPE"], default=pd.NA)
+        row["POWER_LAW_MAE_zipf"] = get_nested(
+            data, ["zipf", "per_tokenizer", tok, "global", "POWER_LAW_MAE"], default=pd.NA
+        )
+
+        # Vocabulary tokens stats
+        vt_block = get_nested(data, ["vocabulary_tokens", "per_tokenizer", tok, "vocabulary_tokens"], default=None)
+        if isinstance(vt_block, dict):
+            row["final_tokens_count"] = vt_block.get("final_tokens_count", pd.NA)
+            row["used_in_merges"] = vt_block.get("used_in_merges", pd.NA)
+            row["leading_space_tokens_count"] = vt_block.get("leading_space_tokens_count", pd.NA)
+            row["leading_space_tokens_share"] = vt_block.get("leading_space_tokens_share", pd.NA)
+
+        # U-stat summary
+        row["u_mean"] = get_nested(data, ["ustat", "per_tokenizer", tok, "summary", "u_mean"], default=pd.NA)
+        row["u_median"] = get_nested(data, ["ustat", "per_tokenizer", tok, "summary", "u_median"], default=pd.NA)
+
+        # chars_total not found in JSON -> remain NA if absent
 
         # MorphScore macro metrics (per-language)
         ms_per_lang = get_nested(data, ["morphscore", "per_tokenizer", tok, "per_language"], default=None)
