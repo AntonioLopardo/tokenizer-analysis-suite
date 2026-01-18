@@ -34,8 +34,8 @@ COLUMNS_TO_KEEP: List[str] = [
     "AUC_zipf",
     "SLOPE_zipf",
     "POWER_LAW_MAE_zipf",
-    "macro_precision",
-    "macro_recall",
+    "morphscore_precision",
+    "morphscore_recall",
 ]
 
 
@@ -47,13 +47,13 @@ def _first_non_null(series: pd.Series):
 # Map legacy column names to the current schema
 ALIASES = {
     "u_stats_n_tokens": "n_tokens",
-    "macro_precision_morphscore": "macro_precision",
-    "macro_recall_morphscore": "macro_recall",
+    # "macro_precision_morphscore": "macro_precision",
+    # "macro_recall_morphscore": "macro_recall",
 }
 
 
 def consolidate_csvs(input_dir: Path, output_path: Path) -> Path:
-    csv_files = sorted([p for p in input_dir.glob("*.csv") if p.is_file()])
+    csv_files = sorted([p for p in input_dir.glob("*.csv") if p.is_file() and p.name != output_path.name])
     if not csv_files:
         logging.info("No CSV files found in %s; will attempt to include JSON results if available", input_dir)
 
@@ -158,11 +158,9 @@ def extract_metrics_from_analysis_json(json_path: Path) -> pd.DataFrame:
             cur = cur[k]
         return cur
 
-    def pick_language(per_language_block: Optional[Dict[str, Any]], preferred: str = "eng_Latn") -> Optional[str]:
+    def pick_language(per_language_block: Optional[Dict[str, Any]]) -> Optional[str]:
         if not isinstance(per_language_block, dict) or not per_language_block:
             return None
-        if preferred in per_language_block:
-            return preferred
         # Fall back to the first available language key
         return next(iter(per_language_block.keys()), None)
 
@@ -281,12 +279,15 @@ def extract_metrics_from_analysis_json(json_path: Path) -> pd.DataFrame:
         ms_per_lang = get_nested(data, ["morphscore", "per_tokenizer", tok, "per_language"], default=None)
         ms_lang_key = pick_language(ms_per_lang)
         if ms_lang_key is not None:
-            row["macro_precision"] = get_nested(ms_per_lang, [ms_lang_key, "macro_precision"], default=pd.NA)
-            row["macro_recall"] = get_nested(ms_per_lang, [ms_lang_key, "macro_recall"], default=pd.NA)
+            row["morphscore_precision"] = get_nested(ms_per_lang, [ms_lang_key, "morphscore_precision"], default=pd.NA)
+            row["morphscore_recall"] = get_nested(ms_per_lang, [ms_lang_key, "morphscore_recall"], default=pd.NA)
 
         rows.append(row)
-
+    
     df = pd.DataFrame(rows)
+    
+    logging.info("morphscore_precision mean: %f", df["morphscore_precision"].mean())
+    logging.info("morphscore_recall mean: %f", df["morphscore_recall"].mean())
     # Ensure canonical column order and presence
     for col in COLUMNS_TO_KEEP:
         if col not in df.columns:
