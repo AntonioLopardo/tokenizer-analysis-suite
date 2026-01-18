@@ -5,7 +5,7 @@ DATA_DIR="data"
 CONFIG_DIR="${DATA_DIR}/configs"
 RESULTS_DIR="${DATA_DIR}/results"
 
-TOK_CONFIG="${CONFIG_DIR}/tok_config.json"
+TOK_CONFIG="${CONFIG_DIR}/tok_config_eng.json"
 LANG_CONFIG="${CONFIG_DIR}/lang_eng.json"
 ENG_DATA="${DATA_DIR}/eng_Latn/eng_latn_300mb.txt"
 MORPHSCORE_DATA="${DATA_DIR}/morphscore"
