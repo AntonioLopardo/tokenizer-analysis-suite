@@ -2,7 +2,7 @@
 Basic tokenization metrics using unified TokenizedData interface.
 """
 
-from typing import Dict, List, Any, Optional
+from typing import Dict, List, Any, Optional, Tuple
 import numpy as np
 from collections import Counter
 import logging
@@ -307,10 +307,21 @@ class BasicTokenizationMetrics(BaseMetrics):
             'special_tokens_count': special_tokens
         }
         
-    def _analyze_tokenizer_merges(self, tokenizer: TokenizerWrapper) -> Dict[str, Any]:
-        """Analyze tokenizer merges."""
-        tokens = tokenizer.get_underlying_tokenizer().get_vocab().keys()
-        special_tokens_count = 0#len(tokenizer.get_underlying_tokenizer().get_vocab(with_added_tokens=True).keys()) - len(tokens)
+    def _analyze_tokenizer_merges(self, tokenizer: TokenizerWrapper) -> Tuple[int, int, int]:
+        """Analyze tokenizer merges.
+        
+        Returns:
+            Tuple of (final_tokens_count, used_in_merges, special_tokens_count)
+            Returns (NaN, NaN, NaN) if vocabulary is not accessible.
+        """
+        # Use wrapper's get_vocab() to support non-HF tokenizers (tiktoken, tokenmonster)
+        vocab = tokenizer.get_vocab()
+        if vocab is None:
+            # Return NaN to indicate missing data rather than fake zeros
+            import math
+            return math.nan, math.nan, 0
+        tokens = vocab.keys()
+        special_tokens_count = 0
 
         # Collect all proper prefixes and proper suffixes across tokens
         prefixes: set[str] = set()
