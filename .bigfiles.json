@@ -1,5 +1,11 @@
 {
   "bucket": "hf://buckets/AntonioLopardo/research-management",
   "prefix": "projects/soar/tokenizer-analysis-suite",
-  "files": {}
+  "files": {
+    "data/eng_latn_300mb.txt": {
+      "sha256": "150482e400a32d31f59d0d69d64526d881d3e0973532f963f1de452e8fdf6dad",
+      "size": 300000105,
+      "bucket_path": "projects/soar/tokenizer-analysis-suite/data/eng_latn_300mb.txt"
+    }
+  }
 }
