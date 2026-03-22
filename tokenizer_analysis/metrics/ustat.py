@@ -58,7 +58,25 @@ class UStatMetrics(BaseMetrics):
                     'lowercase': self.lowercase,
                     'within_words_only': self.within_words_only,
                 }
-            }
+            },
+            'pmi_only': {
+                'per_tokenizer': {},
+                'metadata': {
+                    'description': 'Min adjacent char PMI per token, aggregated over vocab',
+                    'definition': 'PMI_only(token) = min_adjacent_char_PMI(token)',
+                    'lowercase': self.lowercase,
+                    'within_words_only': self.within_words_only,
+                }
+            },
+            'entropy_only': {
+                'per_tokenizer': {},
+                'metadata': {
+                    'description': 'Min boundary entropy per token, aggregated over vocab',
+                    'definition': 'entropy_only(token) = min(H_left(token), H_right(token))',
+                    'lowercase': self.lowercase,
+                    'within_words_only': self.within_words_only,
+                }
+            },
         }
 
         get_tok = getattr(self.input_provider, 'get_tokenizer', None)
@@ -93,8 +111,8 @@ class UStatMetrics(BaseMetrics):
                 logger.info(f"Tokenizer '{tok_name}' has no accessible vocabulary; skipping UStat.")
                 continue
 
-            # Compute per-token U values
-            per_token_u, global_min = self._token_pmi_plus_entropy_stat_map(
+            # Compute per-token U values and deconstructed components
+            per_token_u, per_token_pmi, per_token_entropy, global_min = self._token_pmi_plus_entropy_stat_map(
                 vocab_keys=list(vocab.keys()),
                 texts=texts,
                 lam=self.lam,
@@ -104,10 +122,32 @@ class UStatMetrics(BaseMetrics):
                 valid_char_predicate=self.valid_char_predicate,
             )
 
-            summary = self._u_stats_from_per_token(per_token_u)
+            token_id_counts: Counter = Counter()
+            for td in tokenized_data[tok_name]:
+                token_id_counts.update(td.tokens)
+
+            token_freq: Dict[str, int] = {}
+            for token_str in per_token_u:
+                tid = vocab.get(token_str)
+                if tid is not None:
+                    token_freq[token_str] = token_id_counts.get(tid, 0)
+
+            summary = self._u_stats_from_per_token(per_token_u, token_freq)
             results['ustat']['per_tokenizer'][tok_name] = {
                 'summary': summary,
                 'min_u': global_min,
+                'vocab_size': len(vocab)
+            }
+
+            pmi_summary = self._u_stats_from_per_token(per_token_pmi, token_freq)
+            results['pmi_only']['per_tokenizer'][tok_name] = {
+                'summary': pmi_summary,
+                'vocab_size': len(vocab)
+            }
+
+            entropy_summary = self._u_stats_from_per_token(per_token_entropy, token_freq)
+            results['entropy_only']['per_tokenizer'][tok_name] = {
+                'summary': entropy_summary,
                 'vocab_size': len(vocab)
             }
 
@@ -240,7 +280,7 @@ class UStatMetrics(BaseMetrics):
                                          lowercase: bool,
                                          within_words_only: bool,
                                          strip_prefixes: Tuple[str, ...],
-                                         valid_char_predicate=None) -> Tuple[Dict[str, float], float]:
+                                         valid_char_predicate=None) -> Tuple[Dict[str, float], Dict[str, float], Dict[str, float], float]:
         # 1) Dataset-wide character stats for PMI
         char_counts, bigram_counts, total_bigrams = self._compute_char_and_bigram_counts(
             texts, lowercase=lowercase, within_words_only=within_words_only, valid_char_predicate=valid_char_predicate
@@ -259,6 +299,8 @@ class UStatMetrics(BaseMetrics):
 
         # 3) Combine per token
         token_to_u: Dict[str, float] = {}
+        token_to_pmi: Dict[str, float] = {}
+        token_to_entropy: Dict[str, float] = {}
         global_min = float('inf')
 
         for token in vocab_keys:
@@ -275,6 +317,8 @@ class UStatMetrics(BaseMetrics):
             if math.isnan(pmi_min) or math.isnan(h_min):
                 continue
 
+            token_to_pmi[token] = pmi_min
+            token_to_entropy[token] = h_min
             u_val = pmi_min + lam * h_min
             token_to_u[token] = u_val
             global_min = min(global_min, u_val)
@@ -282,7 +326,7 @@ class UStatMetrics(BaseMetrics):
         if global_min == float('inf'):
             global_min = float('nan')
 
-        return token_to_u, global_min
+        return token_to_u, token_to_pmi, token_to_entropy, global_min
 
     @staticmethod
     def _compute_char_pmi(c1: str,
@@ -316,13 +360,16 @@ class UStatMetrics(BaseMetrics):
         return float('nan') if not values else min(values)
 
     @staticmethod
-    def _u_stats_from_per_token(per_token_u: Dict[str, float]) -> Dict[str, Any]:
+    def _u_stats_from_per_token(per_token_u: Dict[str, float],
+                                token_frequencies: Optional[Dict[str, int]] = None) -> Dict[str, Any]:
         values = list(per_token_u.values())
         n = len(values)
         if n == 0:
             return {
                 'n_tokens': 0,
                 'u_mean': None,
+                'u_mean_weighted': None,
+                'u_mean_log_weighted': None,
                 'u_median': None,
                 'u_stdev': None,
                 'u_min': None,
@@ -351,6 +398,8 @@ class UStatMetrics(BaseMetrics):
         stats = {
             'n_tokens': n,
             'u_mean': statistics.fmean(values) if hasattr(statistics, 'fmean') else sum(values) / n,
+            'u_mean_weighted': None,
+            'u_mean_log_weighted': None,
             'u_median': statistics.median(values),
             'u_stdev': statistics.stdev(values) if n > 1 else 0.0,
             'u_min': values_sorted[0],
@@ -365,6 +414,23 @@ class UStatMetrics(BaseMetrics):
             'u_p95': percentile(values_sorted, 95),
             'u_p99': percentile(values_sorted, 99),
         }
+
+        if token_frequencies:
+            total_freq = sum(token_frequencies.get(t, 0) for t in per_token_u)
+            if total_freq > 0:
+                stats['u_mean_weighted'] = sum(
+                    token_frequencies.get(t, 0) * u for t, u in per_token_u.items()
+                ) / total_freq
+
+                total_log_freq = sum(
+                    math.log1p(token_frequencies.get(t, 0)) for t in per_token_u
+                )
+                if total_log_freq > 0:
+                    stats['u_mean_log_weighted'] = sum(
+                        math.log1p(token_frequencies.get(t, 0)) * u
+                        for t, u in per_token_u.items()
+                    ) / total_log_freq
+
         return stats
 
 
