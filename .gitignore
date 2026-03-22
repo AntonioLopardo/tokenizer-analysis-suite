@@ -37,6 +37,8 @@ ENV/
 .ipynb_checkpoints/
 *.ipynb
 
+# bigfiles (large files stored on HF Buckets — paths added by ./scripts/bigfiles.sh add)
+
 # Data files
 *.pkl
 *.pickle
