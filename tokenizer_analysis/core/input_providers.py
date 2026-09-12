@@ -79,6 +79,11 @@ class RawTokenizationProvider(InputProvider):
                             logger.error(f"Tokens for {language} are not a list of integers: {type(tokens)} - {tokens}")
                             raise ValueError(f"Tokens for {language} must be a list of integers, got {type(tokens)}")
                         
+                        # Skip texts that produce empty tokens (e.g., control characters)
+                        if len(tokens) == 0:
+                            logger.debug(f"Empty tokenization result for {language} text (len={len(text)}), skipping")
+                            continue
+                        
                         # Create TokenizedData object
                         data = TokenizedData(
                             tokenizer_name=tok_name,

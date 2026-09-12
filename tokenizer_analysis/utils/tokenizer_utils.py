@@ -17,6 +17,8 @@ from tokenizers.models import Unigram, BPE
 from tokenizers.pre_tokenizers import Whitespace, ByteLevel, Sequence
 from tokenizers.processors import TemplateProcessing
 from transformers import AutoTokenizer
+import torch
+import pathpiece
 
 def load_tokenizer_from_config(config, name: str = "tokenizer"):
     """
@@ -116,6 +118,80 @@ def _load_huggingface_tokenizer(config):
                         continue
         
         raise ValueError(f"Could not load tokenizer from {path}.")
+
+
+class HFCompatTokenizer:
+    """PathPiece tokenizer wrapped to mimic HuggingFace interface."""
+
+    def __init__(self, vocab, greedy, random_tiebreaker, eos="<|endoftext|>", eos_id=0):
+        self.tok = pathpiece.Tokenizer(vocab, random_tiebreaker=random_tiebreaker, greedy=greedy)
+        self.eos_token_id = eos_id
+        self.eos_token = eos
+        # SOAR: MorphScore requires a special_tokens_map (the tiktoken/tokenmonster wrappers set an empty one)
+        self.special_tokens_map = {"eos_token": eos}
+
+    def encode(self, text, **kwargs):
+        return self.tok.encode(text)
+
+    def __call__(self, text, add_special_tokens=True, **kwargs):
+        """SOAR: HF-style callable for MorphScore (mirrors the tiktoken/tokenmonster compat wrappers)."""
+        ids = self.tok.encode(text)["input_ids"]
+        class TokenizerOutput:
+            def __init__(self, ids):
+                self.ids = ids
+                self.input_ids = ids
+        return TokenizerOutput(ids)
+
+    def encode_batch(self, texts, **kwargs):
+        ids_list = self.tok.encode_batch(texts)["input_ids"]
+        return [{"ids": ids} for ids in ids_list]
+
+    def decode(self, token_ids, **kwargs):
+        if isinstance(token_ids, torch.Tensor):
+            token_ids = token_ids.tolist()
+        if isinstance(token_ids, int):
+            return self.tok.decode([token_ids])
+        return self.tok.decode(token_ids)
+
+    def get_vocab(self):
+        raw = self.tok.get_vocab()
+        result = {}
+        for k, v in raw.items():
+            if isinstance(k, bytes):
+                try:
+                    key = k.decode('utf-8')
+                except UnicodeDecodeError:
+                    key = '<0x' + k.hex() + '>'
+            else:
+                key = k
+            while key in result:
+                key = key + '\x00'
+            result[key] = v
+        return result
+
+    def get_vocab_size(self):
+        raw = self.tok.get_vocab()
+        return max(raw.values()) + 1 if raw else 0
+
+
+def _load_pathpiece_tokenizer(config):
+    """Load a PathPiece tokenizer from config."""
+    model_name = config.get('path')
+    if not model_name:
+        raise ValueError("PathPiece config missing required 'path' field")
+
+    base_dir = config.get('base_dir', "/Volumes/T7/SOAR/timtc_vocabs_models/vocabularies")
+    vocab_name = model_name.split("/")[-1] + ".vocab"
+    model_path = os.path.join(base_dir, vocab_name)
+
+    # SOAR: explicit config keys override the name rule. The paper's TMTC metrics run used
+    # greedy=False, random_tiebreaker=True for every .vocab family (tmtc_all_54_25k_nohup.log), which the
+    # name rule does not reproduce for sage_*/unigram_greedy_* (greedy) or pathpiecel_* (no random tiebreak).
+    greedy = bool(config["greedy"]) if "greedy" in config else ("greedy" in model_name)
+    random_tiebreaker = bool(config["random_tiebreaker"]) if "random_tiebreaker" in config else ("pathpiecer" in model_name)
+
+    logger.info(f"Loading pathpiece tokenizer from {model_path} (greedy={greedy}, random_tiebreaker={random_tiebreaker})")
+    return HFCompatTokenizer(vocab=model_path, greedy=greedy, random_tiebreaker=random_tiebreaker)
 
 
 def _load_bpe_from_directory(directory_path):
