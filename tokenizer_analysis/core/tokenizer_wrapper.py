@@ -186,6 +186,29 @@ class HuggingFaceTokenizer(TokenizerWrapper):
     
     def get_underlying_tokenizer(self):
         """Return the underlying HuggingFace tokenizer object."""
+        # SOAR: a tokenizer loaded from a local tokenizer.json is a raw tokenizers.Tokenizer, which MorphScore
+        # cannot call. Wrap it HF-style; decode stays the raw decode (no decoder => Ġ markers survive), which is
+        # the path the paper's TMTC .json-family MorphScore rows came from (03-metrics M9).
+        try:
+            from tokenizers import Tokenizer as _RawTok
+        except Exception:
+            _RawTok = None
+        if _RawTok is not None and isinstance(self._tokenizer, _RawTok):
+            raw = self._tokenizer
+            class RawTokCompat:
+                def __init__(self, t):
+                    self.t = t; self.special_tokens_map = {}
+                def __call__(self, text, add_special_tokens=True, **kw):
+                    ids = self.t.encode(text, add_special_tokens=add_special_tokens).ids
+                    class O: pass
+                    o = O(); o.ids = ids; o.input_ids = ids; return o
+                def decode(self, ids, **kw):
+                    if isinstance(ids, int): ids = [ids]
+                    return self.t.decode(ids)
+                def encode(self, text, **kw): return self.t.encode(text, add_special_tokens=False).ids
+                def get_vocab(self): return self.t.get_vocab()
+                def __getattr__(self, n): return getattr(self.t, n)
+            return RawTokCompat(raw)
         return self._tokenizer
     
     @classmethod
@@ -296,6 +319,52 @@ class PreTokenizedDataTokenizer(TokenizerWrapper):
         return cls(name, vocab_size, vocab_dict)
 
 
+class PathPieceTokenizer(TokenizerWrapper):
+    """Wrapper for PathPiece tokenizers (TMTC paper)."""
+
+    def __init__(self, name: str, tokenizer, config: Dict[str, Any]):
+        self._name = name
+        self._tokenizer = tokenizer
+        self._config = config
+
+    def get_name(self) -> str:
+        return self._name
+
+    def get_vocab_size(self) -> int:
+        if hasattr(self._tokenizer, 'get_vocab_size'):
+            return self._tokenizer.get_vocab_size()
+        return len(self._tokenizer.get_vocab())
+
+    def get_vocab(self) -> Dict[str, int]:
+        return self._tokenizer.get_vocab()
+
+    def can_encode(self) -> bool:
+        return True
+
+    def encode(self, text: str) -> List[int]:
+        result = self._tokenizer.encode(text)
+        if isinstance(result, dict) and 'input_ids' in result:
+            return result['input_ids']
+        if isinstance(result, list):
+            return result
+        raise ValueError(f"Unexpected encoding result type: {type(result)}")
+
+    def can_pretokenize(self) -> bool:
+        return False
+
+    def pretokenize(self, text: str) -> List[str]:
+        raise NotImplementedError("PathPieceTokenizer does not support pretokenization")
+
+    def get_underlying_tokenizer(self):
+        return self._tokenizer
+
+    @classmethod
+    def from_config(cls, name: str, config: Dict[str, Any]) -> 'PathPieceTokenizer':
+        from ..utils.tokenizer_utils import _load_pathpiece_tokenizer
+        tokenizer = _load_pathpiece_tokenizer(config)
+        return cls(name, tokenizer, config)
+
+
 # Registry for custom tokenizer classes
 _TOKENIZER_REGISTRY: Dict[str, type] = {
     'huggingface': HuggingFaceTokenizer,
@@ -303,7 +372,9 @@ _TOKENIZER_REGISTRY: Dict[str, type] = {
     'transformers': HuggingFaceTokenizer,
     'standard': HuggingFaceTokenizer,  # Legacy alias
     'pretokenized': PreTokenizedDataTokenizer,
-    'unimixlm': UniMixLMTokenizer
+    'unimixlm': UniMixLMTokenizer,
+    'pathpiece': PathPieceTokenizer,
+    'custom_bpe': HuggingFaceTokenizer,
 }
 
 

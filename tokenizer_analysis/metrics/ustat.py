@@ -104,7 +104,17 @@ class UStatMetrics(BaseMetrics):
                 valid_char_predicate=self.valid_char_predicate,
             )
 
-            summary = self._u_stats_from_per_token(per_token_u)
+            token_id_counts: Counter = Counter()
+            for td in tokenized_data[tok_name]:
+                token_id_counts.update(td.tokens)
+
+            token_freq: Dict[str, int] = {}
+            for token_str in per_token_u:
+                tid = vocab.get(token_str)
+                if tid is not None:
+                    token_freq[token_str] = token_id_counts.get(tid, 0)
+
+            summary = self._u_stats_from_per_token(per_token_u, token_freq)
             results['ustat']['per_tokenizer'][tok_name] = {
                 'summary': summary,
                 'min_u': global_min,
@@ -315,14 +325,85 @@ class UStatMetrics(BaseMetrics):
             values.append(pmi)
         return float('nan') if not values else min(values)
 
+    def _token_pmi_only_map(self,
+                            vocab_keys: List[str],
+                            texts: List[str],
+                            *,
+                            lowercase: bool,
+                            within_words_only: bool,
+                            strip_prefixes: Tuple[str, ...],
+                            valid_char_predicate=None) -> Tuple[Dict[str, float], float]:
+        """Compute only the min-adjacent-char-PMI component per token."""
+        char_counts, bigram_counts, total_bigrams = self._compute_char_and_bigram_counts(
+            texts, lowercase=lowercase, within_words_only=within_words_only,
+            valid_char_predicate=valid_char_predicate,
+        )
+
+        token_to_pmi: Dict[str, float] = {}
+        global_min = float('inf')
+
+        for token in vocab_keys:
+            norm = self._normalize_token_for_chars(token, strip_prefixes)
+            if lowercase:
+                norm = norm.lower()
+            pmi_min = self._min_adjacent_pmi(norm, char_counts, bigram_counts, total_bigrams)
+            if math.isnan(pmi_min) or math.isinf(pmi_min):
+                continue
+            token_to_pmi[token] = pmi_min
+            global_min = min(global_min, pmi_min)
+
+        if global_min == float('inf'):
+            global_min = float('nan')
+        return token_to_pmi, global_min
+
+    def _token_boundary_entropy_only_map(self,
+                                          vocab_keys: List[str],
+                                          texts: List[str],
+                                          *,
+                                          lowercase: bool,
+                                          within_words_only: bool,
+                                          strip_prefixes: Tuple[str, ...],
+                                          valid_char_predicate=None) -> Tuple[Dict[str, float], float]:
+        """Compute only the min(H_left, H_right) component per token (no lambda scaling)."""
+        ent_map, _ = self._token_left_right_entropy_map(
+            vocab_tokens=vocab_keys,
+            texts=texts,
+            lowercase=lowercase,
+            within_words_only=within_words_only,
+            valid_char_predicate=valid_char_predicate,
+            strip_prefixes=strip_prefixes,
+            drop_if_len_lt1=True,
+        )
+
+        token_to_ent: Dict[str, float] = {}
+        global_min = float('inf')
+
+        for token in vocab_keys:
+            h_tuple = ent_map.get(token)
+            if h_tuple is None:
+                continue
+            _, _, h_min = h_tuple
+            if math.isnan(h_min):
+                continue
+            token_to_ent[token] = h_min
+            global_min = min(global_min, h_min)
+
+        if global_min == float('inf'):
+            global_min = float('nan')
+        return token_to_ent, global_min
+
     @staticmethod
-    def _u_stats_from_per_token(per_token_u: Dict[str, float]) -> Dict[str, Any]:
+    def _u_stats_from_per_token(per_token_u: Dict[str, float],
+                                token_frequencies: Optional[Dict[str, int]] = None) -> Dict[str, Any]:
         values = list(per_token_u.values())
         n = len(values)
         if n == 0:
             return {
                 'n_tokens': 0,
                 'u_mean': None,
+                'u_mean_weighted': None,
+                'u_mean_log_weighted': None,
+                'u_coverage': None,
                 'u_median': None,
                 'u_stdev': None,
                 'u_min': None,
@@ -365,6 +446,171 @@ class UStatMetrics(BaseMetrics):
             'u_p95': percentile(values_sorted, 95),
             'u_p99': percentile(values_sorted, 99),
         }
+
+        stats['u_mean_weighted'] = None
+        stats['u_mean_log_weighted'] = None
+        stats['u_coverage'] = None
+
+        if token_frequencies:
+            total_freq = sum(token_frequencies.get(t, 0) for t in per_token_u)
+            if total_freq > 0:
+                stats['u_mean_weighted'] = sum(
+                    token_frequencies.get(t, 0) * u for t, u in per_token_u.items()
+                ) / total_freq
+
+                total_log_freq = sum(
+                    math.log1p(token_frequencies.get(t, 0)) for t in per_token_u
+                )
+                if total_log_freq > 0:
+                    stats['u_mean_log_weighted'] = sum(
+                        math.log1p(token_frequencies.get(t, 0)) * u
+                        for t, u in per_token_u.items()
+                    ) / total_log_freq
+
+                total_occurrences = sum(token_frequencies.values())
+                if total_occurrences > 0:
+                    stats['u_coverage'] = total_freq / total_occurrences
+
         return stats
 
 
+class _DecomposedUStatBase(UStatMetrics):
+    """Shared logic for per-language decomposed U-stat variants."""
+
+    _result_key: str = ''  # override in subclasses
+
+    def _compute_per_token_map(self, vocab_keys, texts):
+        """Override in subclasses to return (per_token_dict, global_min)."""
+        raise NotImplementedError
+
+    def compute(self, tokenized_data: Optional[Dict[str, List]] = None) -> Dict[str, Any]:
+        if tokenized_data is None:
+            tokenized_data = self.get_tokenized_data()
+
+        results: Dict[str, Any] = {
+            self._result_key: {
+                'per_tokenizer': {},
+                'metadata': self._build_metadata(),
+            }
+        }
+
+        get_tok = getattr(self.input_provider, 'get_tokenizer', None)
+        if not callable(get_tok):
+            return results
+
+        for tok_name in self.tokenizer_names:
+            if tok_name not in tokenized_data:
+                continue
+            try:
+                tok_wrapper = get_tok(tok_name)
+            except Exception:
+                continue
+            vocab = None
+            try:
+                if hasattr(tok_wrapper, 'get_vocab'):
+                    vocab = tok_wrapper.get_vocab()
+            except Exception:
+                pass
+            if not vocab:
+                continue
+
+            vocab_keys = list(vocab.keys())
+
+            # Group data by language
+            lang_groups: Dict[str, List] = defaultdict(list)
+            for td in tokenized_data[tok_name]:
+                lang_groups[td.language].append(td)
+
+            per_language: Dict[str, Any] = {}
+            all_texts: List[str] = []
+
+            for lang, lang_data in lang_groups.items():
+                lang_texts = TokenizedDataProcessor.extract_texts(lang_data)
+                if not lang_texts:
+                    continue
+                all_texts.extend(lang_texts)
+
+                per_token, lang_min = self._compute_per_token_map(vocab_keys, lang_texts)
+
+                # Token frequencies for this language
+                token_id_counts: Counter = Counter()
+                for td in lang_data:
+                    token_id_counts.update(td.tokens)
+                token_freq: Dict[str, int] = {}
+                for token_str in per_token:
+                    tid = vocab.get(token_str)
+                    if tid is not None:
+                        token_freq[token_str] = token_id_counts.get(tid, 0)
+
+                summary = self._u_stats_from_per_token(per_token, token_freq)
+                per_language[lang] = summary
+
+            # Global (all languages pooled)
+            if all_texts:
+                per_token_global, global_min = self._compute_per_token_map(vocab_keys, all_texts)
+                token_id_counts_global: Counter = Counter()
+                for td in tokenized_data[tok_name]:
+                    token_id_counts_global.update(td.tokens)
+                token_freq_global: Dict[str, int] = {}
+                for token_str in per_token_global:
+                    tid = vocab.get(token_str)
+                    if tid is not None:
+                        token_freq_global[token_str] = token_id_counts_global.get(tid, 0)
+                summary_global = self._u_stats_from_per_token(per_token_global, token_freq_global)
+            else:
+                summary_global = self._u_stats_from_per_token({}, {})
+                global_min = float('nan')
+
+            results[self._result_key]['per_tokenizer'][tok_name] = {
+                'summary': summary_global,
+                'per_language': per_language,
+                'min_u': global_min,
+                'vocab_size': len(vocab),
+            }
+
+        return results
+
+    def _build_metadata(self) -> Dict[str, Any]:
+        raise NotImplementedError
+
+
+class UStatPMIMetrics(_DecomposedUStatBase):
+    """U-stat variant: only the min-adjacent-char-PMI component."""
+
+    _result_key = 'ustat_pmi'
+
+    def _build_metadata(self):
+        return {
+            'description': 'PMI-only component of U-statistics (min adjacent char PMI per token)',
+            'definition': 'U_pmi(token) = min_adjacent_char_PMI(token)',
+            'lowercase': self.lowercase,
+            'within_words_only': self.within_words_only,
+        }
+
+    def _compute_per_token_map(self, vocab_keys, texts):
+        return self._token_pmi_only_map(
+            vocab_keys=vocab_keys, texts=texts,
+            lowercase=self.lowercase, within_words_only=self.within_words_only,
+            strip_prefixes=self.strip_prefixes, valid_char_predicate=self.valid_char_predicate,
+        )
+
+
+class UStatBoundaryEntropyMetrics(_DecomposedUStatBase):
+    """U-stat variant: only the boundary entropy component (min(H_left, H_right), no lambda scaling)."""
+
+    _result_key = 'ustat_boundary_entropy'
+
+    def _build_metadata(self):
+        return {
+            'description': 'Boundary-entropy-only component of U-statistics (raw, no lambda scaling)',
+            'definition': 'U_ent(token) = min(H_left(token), H_right(token))',
+            'lowercase': self.lowercase,
+            'within_words_only': self.within_words_only,
+        }
+
+    def _compute_per_token_map(self, vocab_keys, texts):
+        return self._token_boundary_entropy_only_map(
+            vocab_keys=vocab_keys, texts=texts,
+            lowercase=self.lowercase, within_words_only=self.within_words_only,
+            strip_prefixes=self.strip_prefixes, valid_char_predicate=self.valid_char_predicate,
+        )

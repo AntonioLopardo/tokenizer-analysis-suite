@@ -11,7 +11,7 @@ from .information_theoretic import InformationTheoreticMetrics
 from .morphological import MorphologicalMetrics
 from .gini import TokenizerGiniMetrics
 from .morphscore import MorphScoreMetrics
-from .ustat import UStatMetrics
+from .ustat import UStatMetrics, UStatPMIMetrics, UStatBoundaryEntropyMetrics
 from .distribution_shape import DistributionShapeMetrics
 
 __all__ = [
@@ -22,5 +22,7 @@ __all__ = [
     "TokenizerGiniMetrics",
     "MorphScoreMetrics",
     "UStatMetrics",
+    "UStatPMIMetrics",
+    "UStatBoundaryEntropyMetrics",
     "DistributionShapeMetrics"
 ]
