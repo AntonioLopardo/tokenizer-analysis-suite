@@ -1,3 +1,4 @@
 [submodule "morphscore"]
 	path = morphscore
-	url = https://github.com/cimeister/morphscore
+	url = https://github.com/AntonioLopardo/morphscore
+	branch = soar-reproduction-2026-09
