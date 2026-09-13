@@ -186,7 +186,7 @@ class HuggingFaceTokenizer(TokenizerWrapper):
     
     def get_underlying_tokenizer(self):
         """Return the underlying HuggingFace tokenizer object."""
-        # SOAR: a tokenizer loaded from a local tokenizer.json is a raw tokenizers.Tokenizer, which MorphScore
+        # TMMC: a tokenizer loaded from a local tokenizer.json is a raw tokenizers.Tokenizer, which MorphScore
         # cannot call. Wrap it HF-style; decode stays the raw decode (no decoder => Ġ markers survive), which is
         # the path the paper's TMTC .json-family MorphScore rows came from (03-metrics M9).
         try:

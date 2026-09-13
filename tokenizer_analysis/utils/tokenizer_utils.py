@@ -127,14 +127,14 @@ class HFCompatTokenizer:
         self.tok = pathpiece.Tokenizer(vocab, random_tiebreaker=random_tiebreaker, greedy=greedy)
         self.eos_token_id = eos_id
         self.eos_token = eos
-        # SOAR: MorphScore requires a special_tokens_map (the tiktoken/tokenmonster wrappers set an empty one)
+        # TMMC: MorphScore requires a special_tokens_map (the tiktoken/tokenmonster wrappers set an empty one)
         self.special_tokens_map = {"eos_token": eos}
 
     def encode(self, text, **kwargs):
         return self.tok.encode(text)
 
     def __call__(self, text, add_special_tokens=True, **kwargs):
-        """SOAR: HF-style callable for MorphScore (mirrors the tiktoken/tokenmonster compat wrappers)."""
+        """TMMC: HF-style callable for MorphScore (mirrors the tiktoken/tokenmonster compat wrappers)."""
         ids = self.tok.encode(text)["input_ids"]
         class TokenizerOutput:
             def __init__(self, ids):
@@ -180,11 +180,11 @@ def _load_pathpiece_tokenizer(config):
     if not model_name:
         raise ValueError("PathPiece config missing required 'path' field")
 
-    base_dir = config.get('base_dir', "/Volumes/T7/SOAR/timtc_vocabs_models/vocabularies")
+    base_dir = config.get('base_dir', "/Volumes/T7/TMMC/timtc_vocabs_models/vocabularies")
     vocab_name = model_name.split("/")[-1] + ".vocab"
     model_path = os.path.join(base_dir, vocab_name)
 
-    # SOAR: explicit config keys override the name rule. The paper's TMTC metrics run used
+    # TMMC: explicit config keys override the name rule. The paper's TMTC metrics run used
     # greedy=False, random_tiebreaker=True for every .vocab family (tmtc_all_54_25k_nohup.log), which the
     # name rule does not reproduce for sage_*/unigram_greedy_* (greedy) or pathpiecel_* (no random tiebreak).
     greedy = bool(config["greedy"]) if "greedy" in config else ("greedy" in model_name)
