@@ -6,6 +6,7 @@ Provides adapters for:
 - tokenmonster (ungreedy tokenization)
 """
 
+import os
 from typing import Dict, List, Optional, Any
 import logging
 
@@ -254,7 +255,9 @@ class TokenMonsterTokenizer(TokenizerWrapper):
             # Format like 'tokenmonster/englishcode-32000-consistent-v1'
             vocab_path = vocab_path.split('/')[-1]
         
-        # Load the vocabulary
+        # Load the vocabulary (TOKENMONSTER_DIR keeps the files out of ~/_tokenmonster)
+        if os.environ.get("TOKENMONSTER_DIR"):
+            tokenmonster.set_local_directory(os.environ["TOKENMONSTER_DIR"])
         vocab = tokenmonster.load(vocab_path)
         logger.info(f"Loaded TokenMonster vocab: {vocab_path} (vocab_size={len(vocab)})")
         return cls(name, vocab, config)
