@@ -237,11 +237,11 @@ class UnifiedTokenizerAnalyzer:
             logger.warning(f"U-Stat metrics failed: {e}")
 
         for component in self.ustat_component_metrics:
-            logger.info(f"Computing {component._result_key} metrics...")
+            logger.info(f"Computing {component.result_key} metrics...")
             try:
                 results.update(component.compute(tokenized_data))
             except Exception as e:
-                logger.warning(f"{component._result_key} metrics failed: {e}")
+                logger.warning(f"{component.result_key} metrics failed: {e}")
         
         # Save tokenized data if requested
         if save_tokenized_data:
@@ -833,7 +833,7 @@ def create_analyzer_from_raw_inputs(tokenizer_configs: Dict[str, Dict],
     if plot_tokenizers:
         kwargs['plot_tokenizers'] = plot_tokenizers
     
-    # Remove kwargs not accepted by UnifiedTokenizerAnalyzer
+    # the run script passes the config file's keys through; the analyzer has no normalization_config parameter
     kwargs.pop('normalization_config', None)
     
     return UnifiedTokenizerAnalyzer(input_provider, **kwargs)

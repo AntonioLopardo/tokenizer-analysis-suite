@@ -198,7 +198,7 @@ class RawTokenizerHFAdapter:
         return getattr(self.tok, name)
 
 
-def _load_pathpiece_tokenizer(config):
+def load_pathpiece_tokenizer(config):
     """A PathPiece tokenizer from a config entry: `path` names the vocabulary, `base_dir` (else TIMTC_VOCAB_DIR) the
     directory of the .vocab files; `greedy` and `random_tiebreaker` are read when given, else taken from the name
     (a `greedy` scheme is greedy, a `pathpiecer` scheme breaks ties at random)."""

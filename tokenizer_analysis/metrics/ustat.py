@@ -325,73 +325,6 @@ class UStatMetrics(BaseMetrics):
             values.append(pmi)
         return float('nan') if not values else min(values)
 
-    def _token_pmi_only_map(self,
-                            vocab_keys: List[str],
-                            texts: List[str],
-                            *,
-                            lowercase: bool,
-                            within_words_only: bool,
-                            strip_prefixes: Tuple[str, ...],
-                            valid_char_predicate=None) -> Tuple[Dict[str, float], float]:
-        """Compute only the min-adjacent-char-PMI component per token."""
-        char_counts, bigram_counts, total_bigrams = self._compute_char_and_bigram_counts(
-            texts, lowercase=lowercase, within_words_only=within_words_only,
-            valid_char_predicate=valid_char_predicate,
-        )
-
-        token_to_pmi: Dict[str, float] = {}
-        global_min = float('inf')
-
-        for token in vocab_keys:
-            norm = self._normalize_token_for_chars(token, strip_prefixes)
-            if lowercase:
-                norm = norm.lower()
-            pmi_min = self._min_adjacent_pmi(norm, char_counts, bigram_counts, total_bigrams)
-            if math.isnan(pmi_min) or math.isinf(pmi_min):
-                continue
-            token_to_pmi[token] = pmi_min
-            global_min = min(global_min, pmi_min)
-
-        if global_min == float('inf'):
-            global_min = float('nan')
-        return token_to_pmi, global_min
-
-    def _token_boundary_entropy_only_map(self,
-                                          vocab_keys: List[str],
-                                          texts: List[str],
-                                          *,
-                                          lowercase: bool,
-                                          within_words_only: bool,
-                                          strip_prefixes: Tuple[str, ...],
-                                          valid_char_predicate=None) -> Tuple[Dict[str, float], float]:
-        """Compute only the min(H_left, H_right) component per token (no lambda scaling)."""
-        ent_map, _ = self._token_left_right_entropy_map(
-            vocab_tokens=vocab_keys,
-            texts=texts,
-            lowercase=lowercase,
-            within_words_only=within_words_only,
-            valid_char_predicate=valid_char_predicate,
-            strip_prefixes=strip_prefixes,
-            drop_if_len_lt1=True,
-        )
-
-        token_to_ent: Dict[str, float] = {}
-        global_min = float('inf')
-
-        for token in vocab_keys:
-            h_tuple = ent_map.get(token)
-            if h_tuple is None:
-                continue
-            _, _, h_min = h_tuple
-            if math.isnan(h_min):
-                continue
-            token_to_ent[token] = h_min
-            global_min = min(global_min, h_min)
-
-        if global_min == float('inf'):
-            global_min = float('nan')
-        return token_to_ent, global_min
-
     @staticmethod
     def _u_stats_from_per_token(per_token_u: Dict[str, float],
                                 token_frequencies: Optional[Dict[str, int]] = None) -> Dict[str, Any]:
@@ -477,10 +410,10 @@ class UStatMetrics(BaseMetrics):
 class _UStatComponentMetrics(UStatMetrics):
     """One component of the U-statistic, per language and pooled: the subclass says which."""
 
-    _result_key: str = ''  # override in subclasses
+    result_key: str = ''  # the key of this component's block in the results; the subclass sets it
 
     def _compute_per_token_map(self, vocab_keys, texts):
-        """Override in subclasses to return (per_token_dict, global_min)."""
+        """The component's value per vocabulary token on these texts, and the smallest: (per token, minimum)."""
         raise NotImplementedError
 
     def compute(self, tokenized_data: Optional[Dict[str, List]] = None) -> Dict[str, Any]:
@@ -488,7 +421,7 @@ class _UStatComponentMetrics(UStatMetrics):
             tokenized_data = self.get_tokenized_data()
 
         results: Dict[str, Any] = {
-            self._result_key: {
+            self.result_key: {
                 'per_tokenizer': {},
                 'metadata': self._build_metadata(),
             }
@@ -545,7 +478,7 @@ class _UStatComponentMetrics(UStatMetrics):
                 summary_global = self._u_stats_from_per_token({}, {})
                 global_min = float('nan')
 
-            results[self._result_key]['per_tokenizer'][tok_name] = {
+            results[self.result_key]['per_tokenizer'][tok_name] = {
                 'summary': summary_global,
                 'per_language': per_language,
                 'min_u': global_min,
@@ -561,7 +494,7 @@ class _UStatComponentMetrics(UStatMetrics):
 class UStatPMIMetrics(_UStatComponentMetrics):
     """The PMI component of the U-statistic: the minimum adjacent-character PMI per token."""
 
-    _result_key = 'ustat_pmi'
+    result_key = 'ustat_pmi'
 
     def _build_metadata(self):
         return {
@@ -572,17 +505,35 @@ class UStatPMIMetrics(_UStatComponentMetrics):
         }
 
     def _compute_per_token_map(self, vocab_keys, texts):
-        return self._token_pmi_only_map(
-            vocab_keys=vocab_keys, texts=texts,
-            lowercase=self.lowercase, within_words_only=self.within_words_only,
-            strip_prefixes=self.strip_prefixes, valid_char_predicate=self.valid_char_predicate,
+        """Compute only the min-adjacent-char-PMI component per token."""
+        char_counts, bigram_counts, total_bigrams = self._compute_char_and_bigram_counts(
+            texts, lowercase=self.lowercase, within_words_only=self.within_words_only,
+            valid_char_predicate=self.valid_char_predicate,
         )
+
+        token_to_pmi: Dict[str, float] = {}
+        global_min = float('inf')
+
+        for token in vocab_keys:
+            norm = self._normalize_token_for_chars(token, self.strip_prefixes)
+            if self.lowercase:
+                norm = norm.lower()
+            pmi_min = self._min_adjacent_pmi(norm, char_counts, bigram_counts, total_bigrams)
+            if math.isnan(pmi_min) or math.isinf(pmi_min):
+                continue
+            token_to_pmi[token] = pmi_min
+            global_min = min(global_min, pmi_min)
+
+        if global_min == float('inf'):
+            global_min = float('nan')
+        return token_to_pmi, global_min
+
 
 
 class UStatBoundaryEntropyMetrics(_UStatComponentMetrics):
     """The boundary-entropy component of the U-statistic: min(H_left, H_right) per token, without the lambda scaling."""
 
-    _result_key = 'ustat_boundary_entropy'
+    result_key = 'ustat_boundary_entropy'
 
     def _build_metadata(self):
         return {
@@ -593,8 +544,31 @@ class UStatBoundaryEntropyMetrics(_UStatComponentMetrics):
         }
 
     def _compute_per_token_map(self, vocab_keys, texts):
-        return self._token_boundary_entropy_only_map(
-            vocab_keys=vocab_keys, texts=texts,
-            lowercase=self.lowercase, within_words_only=self.within_words_only,
-            strip_prefixes=self.strip_prefixes, valid_char_predicate=self.valid_char_predicate,
+        """Compute only the min(H_left, H_right) component per token (no lambda scaling)."""
+        ent_map, _ = self._token_left_right_entropy_map(
+            vocab_tokens=vocab_keys,
+            texts=texts,
+            lowercase=self.lowercase,
+            within_words_only=self.within_words_only,
+            valid_char_predicate=self.valid_char_predicate,
+            strip_prefixes=self.strip_prefixes,
+            drop_if_len_lt1=True,
         )
+
+        token_to_ent: Dict[str, float] = {}
+        global_min = float('inf')
+
+        for token in vocab_keys:
+            h_tuple = ent_map.get(token)
+            if h_tuple is None:
+                continue
+            _, _, h_min = h_tuple
+            if math.isnan(h_min):
+                continue
+            token_to_ent[token] = h_min
+            global_min = min(global_min, h_min)
+
+        if global_min == float('inf'):
+            global_min = float('nan')
+        return token_to_ent, global_min
+

@@ -10,7 +10,7 @@ from typing import Dict, List, Optional, Union, Any, Tuple
 import logging
 from tokenizers import Tokenizer as RawTokenizer
 
-from ..utils.tokenizer_utils import RawTokenizerHFAdapter
+from ..utils.tokenizer_utils import RawTokenizerHFAdapter, load_pathpiece_tokenizer
 
 logger = logging.getLogger(__name__)
 
@@ -303,7 +303,7 @@ class PreTokenizedDataTokenizer(TokenizerWrapper):
 
 
 class PathPieceTokenizer(TokenizerWrapper):
-    """Wrapper for PathPiece tokenizers (TMTC paper)."""
+    """A PathPiece tokenizer (the TIMTC vocabularies), through the PathPieceHFAdapter of tokenizer_utils."""
 
     def __init__(self, name: str, tokenizer, config: Dict[str, Any]):
         self._name = name
@@ -314,9 +314,7 @@ class PathPieceTokenizer(TokenizerWrapper):
         return self._name
 
     def get_vocab_size(self) -> int:
-        if hasattr(self._tokenizer, 'get_vocab_size'):
-            return self._tokenizer.get_vocab_size()
-        return len(self._tokenizer.get_vocab())
+        return self._tokenizer.get_vocab_size()
 
     def get_vocab(self) -> Dict[str, int]:
         return self._tokenizer.get_vocab()
@@ -325,12 +323,7 @@ class PathPieceTokenizer(TokenizerWrapper):
         return True
 
     def encode(self, text: str) -> List[int]:
-        result = self._tokenizer.encode(text)
-        if isinstance(result, dict) and 'input_ids' in result:
-            return result['input_ids']
-        if isinstance(result, list):
-            return result
-        raise ValueError(f"Unexpected encoding result type: {type(result)}")
+        return self._tokenizer.encode(text)['input_ids']
 
     def can_pretokenize(self) -> bool:
         return False
@@ -343,9 +336,7 @@ class PathPieceTokenizer(TokenizerWrapper):
 
     @classmethod
     def from_config(cls, name: str, config: Dict[str, Any]) -> 'PathPieceTokenizer':
-        from ..utils.tokenizer_utils import _load_pathpiece_tokenizer
-        tokenizer = _load_pathpiece_tokenizer(config)
-        return cls(name, tokenizer, config)
+        return cls(name, load_pathpiece_tokenizer(config), config)
 
 
 # Registry for custom tokenizer classes
@@ -357,7 +348,6 @@ _TOKENIZER_REGISTRY: Dict[str, type] = {
     'pretokenized': PreTokenizedDataTokenizer,
     'unimixlm': UniMixLMTokenizer,
     'pathpiece': PathPieceTokenizer,
-    'custom_bpe': HuggingFaceTokenizer,
 }
 
 
