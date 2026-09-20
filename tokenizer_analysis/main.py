@@ -137,10 +137,9 @@ class UnifiedTokenizerAnalyzer:
         # Initialize visualizer
         self.visualizer = TokenizerVisualizer(self.plot_tokenizers, plot_save_dir, show_global_lines, per_language_plots, faceted_plots)
 
-        # Initialize U-Stat metrics (requires tokenizer vocab and raw texts)
+        # Initialize U-Stat metrics (requires tokenizer vocab and raw texts): the statistic and its two components
         self.ustat_metrics = UStatMetrics(input_provider)
-        self.ustat_pmi_metrics = UStatPMIMetrics(input_provider)
-        self.ustat_boundary_entropy_metrics = UStatBoundaryEntropyMetrics(input_provider)
+        self.ustat_component_metrics = [UStatPMIMetrics(input_provider), UStatBoundaryEntropyMetrics(input_provider)]
         
         logger.info(f"Initialized unified analyzer with {len(self.tokenizer_names)} tokenizers: {self.tokenizer_names}")
         if len(self.plot_tokenizers) < len(self.tokenizer_names):
@@ -237,20 +236,12 @@ class UnifiedTokenizerAnalyzer:
         except Exception as e:
             logger.warning(f"U-Stat metrics failed: {e}")
 
-        # Run decomposed U-Stat variants (PMI-only and boundary-entropy-only)
-        logger.info("Computing U-Stat PMI-only metrics...")
-        try:
-            ustat_pmi_results = self.ustat_pmi_metrics.compute(tokenized_data)
-            results.update(ustat_pmi_results)
-        except Exception as e:
-            logger.warning(f"U-Stat PMI metrics failed: {e}")
-
-        logger.info("Computing U-Stat boundary-entropy-only metrics...")
-        try:
-            ustat_ent_results = self.ustat_boundary_entropy_metrics.compute(tokenized_data)
-            results.update(ustat_ent_results)
-        except Exception as e:
-            logger.warning(f"U-Stat boundary entropy metrics failed: {e}")
+        for component in self.ustat_component_metrics:
+            logger.info(f"Computing {component._result_key} metrics...")
+            try:
+                results.update(component.compute(tokenized_data))
+            except Exception as e:
+                logger.warning(f"{component._result_key} metrics failed: {e}")
         
         # Save tokenized data if requested
         if save_tokenized_data:

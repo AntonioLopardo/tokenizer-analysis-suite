@@ -8,6 +8,9 @@ making it easy for users to integrate custom tokenizers into the framework.
 from abc import ABC, abstractmethod
 from typing import Dict, List, Optional, Union, Any, Tuple
 import logging
+from tokenizers import Tokenizer as RawTokenizer
+
+from ..utils.tokenizer_utils import RawTokenizerHFAdapter
 
 logger = logging.getLogger(__name__)
 
@@ -186,29 +189,9 @@ class HuggingFaceTokenizer(TokenizerWrapper):
     
     def get_underlying_tokenizer(self):
         """Return the underlying HuggingFace tokenizer object."""
-        # TMMC: a tokenizer loaded from a local tokenizer.json is a raw tokenizers.Tokenizer, which MorphScore
-        # cannot call. Wrap it HF-style; decode stays the raw decode (no decoder => Ġ markers survive), which is
-        # the path the paper's TMTC .json-family MorphScore rows came from (03-metrics M9).
-        try:
-            from tokenizers import Tokenizer as _RawTok
-        except Exception:
-            _RawTok = None
-        if _RawTok is not None and isinstance(self._tokenizer, _RawTok):
-            raw = self._tokenizer
-            class RawTokCompat:
-                def __init__(self, t):
-                    self.t = t; self.special_tokens_map = {}
-                def __call__(self, text, add_special_tokens=True, **kw):
-                    ids = self.t.encode(text, add_special_tokens=add_special_tokens).ids
-                    class O: pass
-                    o = O(); o.ids = ids; o.input_ids = ids; return o
-                def decode(self, ids, **kw):
-                    if isinstance(ids, int): ids = [ids]
-                    return self.t.decode(ids)
-                def encode(self, text, **kw): return self.t.encode(text, add_special_tokens=False).ids
-                def get_vocab(self): return self.t.get_vocab()
-                def __getattr__(self, n): return getattr(self.t, n)
-            return RawTokCompat(raw)
+        # a tokenizer loaded from a local tokenizer.json is a raw tokenizers.Tokenizer, which MorphScore cannot call
+        if isinstance(self._tokenizer, RawTokenizer):
+            return RawTokenizerHFAdapter(self._tokenizer)
         return self._tokenizer
     
     @classmethod

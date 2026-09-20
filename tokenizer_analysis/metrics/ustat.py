@@ -21,6 +21,15 @@ from .base import BaseMetrics, TokenizedDataProcessor
 logger = logging.getLogger(__name__)
 
 
+def _token_frequencies(vocab: Dict[str, int], per_token: Dict[str, float], tokenized) -> Dict[str, int]:
+    """How often each token with a U value occurs in the tokenized data (by its id in `vocab`)."""
+    id_counts: Counter = Counter()
+    for td in tokenized:
+        id_counts.update(td.tokens)
+    return {token: id_counts.get(vocab[token], 0) for token in per_token if token in vocab}
+
+
+
 class UStatMetrics(BaseMetrics):
     """
     Compute U-statistics summaries per tokenizer based on input texts and tokenizer vocab.
@@ -104,16 +113,7 @@ class UStatMetrics(BaseMetrics):
                 valid_char_predicate=self.valid_char_predicate,
             )
 
-            token_id_counts: Counter = Counter()
-            for td in tokenized_data[tok_name]:
-                token_id_counts.update(td.tokens)
-
-            token_freq: Dict[str, int] = {}
-            for token_str in per_token_u:
-                tid = vocab.get(token_str)
-                if tid is not None:
-                    token_freq[token_str] = token_id_counts.get(tid, 0)
-
+            token_freq = _token_frequencies(vocab, per_token_u, tokenized_data[tok_name])
             summary = self._u_stats_from_per_token(per_token_u, token_freq)
             results['ustat']['per_tokenizer'][tok_name] = {
                 'summary': summary,
@@ -474,8 +474,8 @@ class UStatMetrics(BaseMetrics):
         return stats
 
 
-class _DecomposedUStatBase(UStatMetrics):
-    """Shared logic for per-language decomposed U-stat variants."""
+class _UStatComponentMetrics(UStatMetrics):
+    """One component of the U-statistic, per language and pooled: the subclass says which."""
 
     _result_key: str = ''  # override in subclasses
 
@@ -532,30 +532,14 @@ class _DecomposedUStatBase(UStatMetrics):
 
                 per_token, lang_min = self._compute_per_token_map(vocab_keys, lang_texts)
 
-                # Token frequencies for this language
-                token_id_counts: Counter = Counter()
-                for td in lang_data:
-                    token_id_counts.update(td.tokens)
-                token_freq: Dict[str, int] = {}
-                for token_str in per_token:
-                    tid = vocab.get(token_str)
-                    if tid is not None:
-                        token_freq[token_str] = token_id_counts.get(tid, 0)
-
+                token_freq = _token_frequencies(vocab, per_token, lang_data)
                 summary = self._u_stats_from_per_token(per_token, token_freq)
                 per_language[lang] = summary
 
             # Global (all languages pooled)
             if all_texts:
                 per_token_global, global_min = self._compute_per_token_map(vocab_keys, all_texts)
-                token_id_counts_global: Counter = Counter()
-                for td in tokenized_data[tok_name]:
-                    token_id_counts_global.update(td.tokens)
-                token_freq_global: Dict[str, int] = {}
-                for token_str in per_token_global:
-                    tid = vocab.get(token_str)
-                    if tid is not None:
-                        token_freq_global[token_str] = token_id_counts_global.get(tid, 0)
+                token_freq_global = _token_frequencies(vocab, per_token_global, tokenized_data[tok_name])
                 summary_global = self._u_stats_from_per_token(per_token_global, token_freq_global)
             else:
                 summary_global = self._u_stats_from_per_token({}, {})
@@ -574,8 +558,8 @@ class _DecomposedUStatBase(UStatMetrics):
         raise NotImplementedError
 
 
-class UStatPMIMetrics(_DecomposedUStatBase):
-    """U-stat variant: only the min-adjacent-char-PMI component."""
+class UStatPMIMetrics(_UStatComponentMetrics):
+    """The PMI component of the U-statistic: the minimum adjacent-character PMI per token."""
 
     _result_key = 'ustat_pmi'
 
@@ -595,8 +579,8 @@ class UStatPMIMetrics(_DecomposedUStatBase):
         )
 
 
-class UStatBoundaryEntropyMetrics(_DecomposedUStatBase):
-    """U-stat variant: only the boundary entropy component (min(H_left, H_right), no lambda scaling)."""
+class UStatBoundaryEntropyMetrics(_UStatComponentMetrics):
+    """The boundary-entropy component of the U-statistic: min(H_left, H_right) per token, without the lambda scaling."""
 
     _result_key = 'ustat_boundary_entropy'
 
