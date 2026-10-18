@@ -8,6 +8,9 @@ making it easy for users to integrate custom tokenizers into the framework.
 from abc import ABC, abstractmethod
 from typing import Dict, List, Optional, Union, Any, Tuple
 import logging
+from tokenizers import Tokenizer as RawTokenizer
+
+from ..utils.tokenizer_utils import RawTokenizerHFAdapter, load_pathpiece_tokenizer
 
 logger = logging.getLogger(__name__)
 
@@ -133,6 +136,15 @@ class HuggingFaceTokenizer(TokenizerWrapper):
         self._name = name
         self._tokenizer = tokenizer
         self._config = config
+        # Enforce global encoding controls
+        self._max_length: Optional[int] = 1024
+        self._truncation: bool = True
+        # If max_length is provided, reflect it on the tokenizer to avoid warnings
+        try:
+            if self._max_length is not None and hasattr(self._tokenizer, 'model_max_length'):
+                self._tokenizer.model_max_length = self._max_length
+        except Exception:
+            pass
     
     def get_name(self) -> str:
         return self._name
@@ -147,7 +159,16 @@ class HuggingFaceTokenizer(TokenizerWrapper):
         return True
     
     def encode(self, text: str) -> List[int]:
-        result = self._tokenizer.encode(text)
+        # Apply truncation/max_length if configured
+        try:
+            result = self._tokenizer.encode(
+                text,
+                truncation=self._truncation,
+                max_length=self._max_length
+            )
+        except TypeError:
+            # Older tokenizers may not accept kwargs; fall back
+            result = self._tokenizer.encode(text)
         # Handle different return types
         if hasattr(result, 'ids'):
             return result.ids
@@ -168,6 +189,9 @@ class HuggingFaceTokenizer(TokenizerWrapper):
     
     def get_underlying_tokenizer(self):
         """Return the underlying HuggingFace tokenizer object."""
+        # a tokenizer loaded from a local tokenizer.json is a raw tokenizers.Tokenizer, which MorphScore cannot call
+        if isinstance(self._tokenizer, RawTokenizer):
+            return RawTokenizerHFAdapter(self._tokenizer)
         return self._tokenizer
     
     @classmethod
@@ -278,6 +302,43 @@ class PreTokenizedDataTokenizer(TokenizerWrapper):
         return cls(name, vocab_size, vocab_dict)
 
 
+class PathPieceTokenizer(TokenizerWrapper):
+    """A PathPiece tokenizer (the TIMTC vocabularies), through the PathPieceHFAdapter of tokenizer_utils."""
+
+    def __init__(self, name: str, tokenizer, config: Dict[str, Any]):
+        self._name = name
+        self._tokenizer = tokenizer
+        self._config = config
+
+    def get_name(self) -> str:
+        return self._name
+
+    def get_vocab_size(self) -> int:
+        return self._tokenizer.get_vocab_size()
+
+    def get_vocab(self) -> Dict[str, int]:
+        return self._tokenizer.get_vocab()
+
+    def can_encode(self) -> bool:
+        return True
+
+    def encode(self, text: str) -> List[int]:
+        return self._tokenizer.encode(text)['input_ids']
+
+    def can_pretokenize(self) -> bool:
+        return False
+
+    def pretokenize(self, text: str) -> List[str]:
+        raise NotImplementedError("PathPieceTokenizer does not support pretokenization")
+
+    def get_underlying_tokenizer(self):
+        return self._tokenizer
+
+    @classmethod
+    def from_config(cls, name: str, config: Dict[str, Any]) -> 'PathPieceTokenizer':
+        return cls(name, load_pathpiece_tokenizer(config), config)
+
+
 # Registry for custom tokenizer classes
 _TOKENIZER_REGISTRY: Dict[str, type] = {
     'huggingface': HuggingFaceTokenizer,
@@ -285,7 +346,8 @@ _TOKENIZER_REGISTRY: Dict[str, type] = {
     'transformers': HuggingFaceTokenizer,
     'standard': HuggingFaceTokenizer,  # Legacy alias
     'pretokenized': PreTokenizedDataTokenizer,
-    'unimixlm': UniMixLMTokenizer
+    'unimixlm': UniMixLMTokenizer,
+    'pathpiece': PathPieceTokenizer,
 }
 
 

@@ -166,6 +166,17 @@ def slim_results_for_json(results: Dict) -> Dict:
                             elif key == 'per_language':
                                 # Include per-language results for analysis
                                 tok_summary[key] = value
+                            elif key == 'vocabulary_tokens':
+                                # Keep vocabulary tokens stats but remove raw arrays
+                                tok_summary[key] = {k: v for k, v in value.items() 
+                                                    if k in ['leading_space_tokens_count', 'leading_space_tokens_share', 'final_tokens_count', 'used_in_merges', 'special_tokens_count']}
+                            elif key in ['encoding_length', 'character_length']:
+                                # Keep encoding/character length stats but remove raw arrays
+                                tok_summary[key] = {k: v for k, v in value.items() 
+                                                    if k in ['mean', 'std', 'median', 'count', 'sum'] and not k.endswith('_lengths')}
+                            elif key in ['cognitive_plausibility']:
+                                # Keep cognitive plausibility stats but remove raw arrays
+                                tok_summary[key] = {k: v for k,v in value.items() if k in ['corr_rt_mean', 'corr_rt_z', 'corr_accuracy']}
                             elif key.startswith('renyi_') and isinstance(value, dict):
                                 # Keep overall entropy values but not per-language details
                                 tok_summary[key] = {'overall': value.get('overall')}
@@ -688,7 +699,7 @@ Examples:
         else:
             return obj
     
-    slimmed_results = slim_results_for_json(results)
+    slimmed_results = results
     results_json = convert_for_json(slimmed_results)
     
     with open(results_file, 'w') as f:

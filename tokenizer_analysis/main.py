@@ -4,7 +4,7 @@ Unified main module supporting both raw and pre-tokenized input modes.
 
 import logging
 import os
-from typing import Dict, List, Any, Optional, Tuple, Union
+from typing import Dict, List, Any, Optional, Tuple, Union, TYPE_CHECKING
 import numpy as np
 
 from .core.input_types import TokenizedData, InputSpecification
@@ -17,10 +17,15 @@ from .metrics.information_theoretic import InformationTheoreticMetrics
 from .metrics.gini import TokenizerGiniMetrics
 from .metrics.morphological import MorphologicalMetrics
 from .metrics.morphscore import MorphScoreMetrics
+from .metrics.cognitive_plausibility import CognitivePlausibilityMetrics
+from .metrics.ustat import UStatMetrics, UStatPMIMetrics, UStatBoundaryEntropyMetrics
+from .metrics.distribution_shape import DistributionShapeMetrics
 from .visualization import TokenizerVisualizer
 from .visualization.latex_tables import LaTeXTableGenerator
 from .config import TextMeasurementConfig, DEFAULT_TEXT_MEASUREMENT_CONFIG
 from .config.language_metadata import LanguageMetadata
+if TYPE_CHECKING:
+    from .core.tokenizer_wrapper import TokenizerWrapper
 
 logger = logging.getLogger(__name__)
 
@@ -98,6 +103,11 @@ class UnifiedTokenizerAnalyzer:
             input_provider, measurement_config=measurement_config, language_metadata=language_metadata
         )
         
+        # Initialize Zipf/Distribution Shape metrics
+        self.distribution_shape_metrics = DistributionShapeMetrics(
+            input_provider, measurement_config, language_metadata
+        )
+
         # Initialize morphological metrics if config provided
         self.morphological_metrics = None
         if morphological_config:
@@ -116,9 +126,20 @@ class UnifiedTokenizerAnalyzer:
             except (ImportError, ValueError) as e:
                 logger.warning(f"MorphScore metrics disabled: {e}")
                 self.morphscore_metrics = None
+
+        # Initialize cognitive plausibility metrics (always available if tokenizers can encode)
+        self.cognitive_metrics = CognitivePlausibilityMetrics(
+            input_provider,
+            measurement_config,
+            language_metadata
+        )
         
         # Initialize visualizer
         self.visualizer = TokenizerVisualizer(self.plot_tokenizers, plot_save_dir, show_global_lines, per_language_plots, faceted_plots)
+
+        # Initialize U-Stat metrics (requires tokenizer vocab and raw texts): the statistic and its two components
+        self.ustat_metrics = UStatMetrics(input_provider)
+        self.ustat_component_metrics = [UStatPMIMetrics(input_provider), UStatBoundaryEntropyMetrics(input_provider)]
         
         logger.info(f"Initialized unified analyzer with {len(self.tokenizer_names)} tokenizers: {self.tokenizer_names}")
         if len(self.plot_tokenizers) < len(self.tokenizer_names):
@@ -176,6 +197,11 @@ class UnifiedTokenizerAnalyzer:
         gini_results = self.gini_metrics.compute(tokenized_data)
         results.update(gini_results)
         
+        # Run Distribution Shape (Zipf) metrics
+        logger.info("Computing distribution shape (Zipf) metrics...")
+        zipf_results = self.distribution_shape_metrics.compute(tokenized_data)
+        results.update(zipf_results)
+
         # Run morphological metrics if available
         if self.morphological_metrics and include_morphological:
             logger.info("Computing morphological metrics...")
@@ -193,6 +219,29 @@ class UnifiedTokenizerAnalyzer:
             
             if verbose:
                 self.morphscore_metrics.print_results(morphscore_results)
+
+        # Run Cognitive Plausibility metrics (requires raw encoders; safely no-op otherwise)
+        logger.info("Computing cognitive plausibility metrics...")
+        try:
+            cognitive_results = self.cognitive_metrics.compute(tokenized_data)
+            results.update(cognitive_results)
+        except Exception as e:
+            logger.warning(f"Cognitive plausibility metrics failed: {e}")
+
+        # Run U-Stat metrics
+        logger.info("Computing U-Stat metrics...")
+        try:
+            ustat_results = self.ustat_metrics.compute(tokenized_data)
+            results.update(ustat_results)
+        except Exception as e:
+            logger.warning(f"U-Stat metrics failed: {e}")
+
+        for component in self.ustat_component_metrics:
+            logger.info(f"Computing {component.result_key} metrics...")
+            try:
+                results.update(component.compute(tokenized_data))
+            except Exception as e:
+                logger.warning(f"{component.result_key} metrics failed: {e}")
         
         # Save tokenized data if requested
         if save_tokenized_data:
@@ -783,6 +832,9 @@ def create_analyzer_from_raw_inputs(tokenizer_configs: Dict[str, Dict],
     # Pass plot_tokenizers to analyzer
     if plot_tokenizers:
         kwargs['plot_tokenizers'] = plot_tokenizers
+    
+    # the run script passes the config file's keys through; the analyzer has no normalization_config parameter
+    kwargs.pop('normalization_config', None)
     
     return UnifiedTokenizerAnalyzer(input_provider, **kwargs)
 

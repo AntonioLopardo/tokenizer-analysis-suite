@@ -1,4 +1,4 @@
 {
   
-  "bpe_eng_latn_6144_300mb_unscaled": { "class": "huggingface-tokenizer", "path": "/Users/antoniolopardo/Documents/SOAR-alt/data/eng_montok/bpe_eng_latn_6144_300mb_unscaled.json" }
+  "bpe_eng_latn_6144_300mb_unscaled": { "class": "huggingface", "path": "/Users/antoniolopardo/Documents/SOAR-alt/data/eng_montok/bpe_eng_latn_6144_300mb_unscaled.json" }
   }
